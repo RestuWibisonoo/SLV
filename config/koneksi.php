@@ -26,7 +26,20 @@ define('DB_PASS', getenv('DB_PASS') ?: '');
 define('DB_NAME', getenv('DB_NAME') ?: 'sodakoh_pohon');
 
 // Base URL configuration
-define('BASE_URL', getenv('BASE_URL') ?: 'http://localhost/sodakohpohon');
+$protocol = isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? "https" : "http";
+if (isset($_SERVER['HTTP_X_FORWARDED_PROTO'])) {
+    $protocol = $_SERVER['HTTP_X_FORWARDED_PROTO'];
+}
+$host = $_SERVER['HTTP_HOST'] ?? 'localhost';
+$dynamic_base_url = $protocol . "://" . $host;
+
+// Handle localhost with subfolder (e.g., XAMPP)
+if (($host === 'localhost' || $host === '127.0.0.1') && strpos($_SERVER['REQUEST_URI'] ?? '', '/sodakohpohon') === 0) {
+    $dynamic_base_url .= '/sodakohpohon';
+}
+
+$env_base_url = getenv('BASE_URL');
+define('BASE_URL', $env_base_url ?: $dynamic_base_url);
 define('UPLOAD_PATH', dirname(__DIR__) . '/uploads/');
 define('UPLOAD_URL', BASE_URL . '/uploads/');
 

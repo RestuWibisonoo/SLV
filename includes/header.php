@@ -15,25 +15,7 @@ $is_laporan = ($current_page === 'laporan.php');
 $is_tentang = ($current_page === 'tentang.php');
 $is_program = ($current_page === 'program-penanaman.php');
 
-// Fungsi untuk mendeteksi OS Pengguna (Client)
-function detect_user_os() {
-    $user_agent = $_SERVER['HTTP_USER_AGENT'] ?? '';
-    $user_agent = strtolower($user_agent);
-    
-    if (strpos($user_agent, 'mac') !== false) {
-        return 'Mac OS';
-    } elseif (strpos($user_agent, 'win') !== false) {
-        return 'Windows';
-    } elseif (strpos($user_agent, 'linux') !== false) {
-        return 'Linux';
-    } elseif (strpos($user_agent, 'android') !== false) {
-        return 'Android';
-    } elseif (strpos($user_agent, 'iphone') !== false || strpos($user_agent, 'ipad') !== false) {
-        return 'iOS';
-    }
-    return 'Unknown OS';
-}
-$current_os = detect_user_os();
+
 
 // Deteksi status login user (pakai helper function dari koneksi.php)
 $is_logged_in = isLoggedIn();
@@ -77,9 +59,9 @@ if (isset($_SESSION['cart']['items']) && is_array($_SESSION['cart']['items'])) {
 }
 
 // Logika Link Navigasi dengan Absolute Path
-$program_href = BASE_URL . '/program-penanaman.php';
-$how_it_works_href = $is_home ? '#how-it-works' : BASE_URL . '/index.php#how-it-works';
-$donate_href = $is_home ? '#campaigns' : BASE_URL . '/index.php#campaigns';
+$program_href = '/program-penanaman.php';
+$how_it_works_href = $is_home ? '#how-it-works' : '/index.php#how-it-works';
+$donate_href = $is_home ? '#campaigns' : '/index.php#campaigns';
 ?>
 <!DOCTYPE html>
 <html lang="id">
@@ -241,7 +223,7 @@ $donate_href = $is_home ? '#campaigns' : BASE_URL . '/index.php#campaigns';
             <div class="hidden md:flex justify-between items-center h-20">
 
                 <!-- Logo -->
-                <a href="<?php echo BASE_URL; ?>/index.php" class="flex items-center space-x-2 flex-shrink-0">
+                <a href="/index.php" class="flex items-center space-x-2 flex-shrink-0">
                     <div class="relative">
                         <div class="absolute inset-0 bg-primary-600 rounded-lg blur-sm opacity-60"></div>
                         <div class="relative bg-gradient-to-br from-primary-600 to-primary-700 rounded-lg p-1.5">
@@ -259,11 +241,11 @@ $donate_href = $is_home ? '#campaigns' : BASE_URL . '/index.php#campaigns';
 
                 <!-- Desktop Menu -->
                 <div class="flex items-center justify-center gap-1 flex-1">
-                    <a href="<?php echo BASE_URL; ?>/index.php"
+                    <a href="/index.php"
                         class="<?php echo $is_home ? 'text-primary-700 font-semibold border-b-2 border-primary-600' : 'text-gray-600 hover:text-primary-600 font-medium transition'; ?> py-2 px-3 text-sm">
                         Beranda
                     </a>
-                    <a href="<?php echo BASE_URL; ?>/campaign.php"
+                    <a href="/campaign.php"
                         class="<?php echo $is_campaign ? 'text-primary-700 font-semibold border-b-2 border-primary-600' : 'text-gray-600 hover:text-primary-600 font-medium transition'; ?> py-2 px-3 text-sm">
                         Campaign
                     </a>
@@ -308,13 +290,13 @@ $donate_href = $is_home ? '#campaigns' : BASE_URL . '/index.php#campaigns';
                         Cara Kerja
                     </a>
 
-                    <a href="<?php echo BASE_URL; ?>/laporan.php"
+                    <a href="/laporan.php"
                         class="<?php echo $is_laporan ? 'text-primary-700 font-semibold border-b-2 border-primary-600' : 'text-gray-600 hover:text-primary-600 font-medium transition'; ?> py-2 px-3 text-sm">
                         Laporan
                     </a>
 
                     <!-- Link Tentang -->
-                    <a href="<?php echo BASE_URL; ?>/tentang.php"
+                    <a href="/tentang.php"
                         class="<?php echo $is_tentang ? 'text-primary-700 font-semibold border-b-2 border-primary-600' : 'text-gray-600 hover:text-primary-600 font-medium transition'; ?> py-2 px-3 text-sm">
                         Tentang
                     </a>
@@ -322,13 +304,8 @@ $donate_href = $is_home ? '#campaigns' : BASE_URL . '/index.php#campaigns';
 
                 <!-- Action Buttons (Desktop) -->
                 <div class="flex items-center gap-3 flex-shrink-0">
-                    <!-- Dev OS Badge -->
-                    <div class="hidden lg:flex items-center bg-gray-100 text-gray-600 border border-gray-200 text-xs font-medium px-2.5 py-1 rounded-lg mr-2" title="OS Anda: <?php echo $current_os; ?>">
-                        <i class="<?php echo ($current_os === 'Mac OS') ? 'fab fa-apple' : (($current_os === 'Windows') ? 'fab fa-windows' : 'fas fa-laptop'); ?> mr-1.5 text-sm"></i>
-                        <?php echo $current_os; ?>
-                    </div>
 
-                    <a href="<?php echo BASE_URL; ?>/cart.php" class="relative p-2 text-gray-600 hover:text-primary-600 transition">
+                    <a href="/cart.php" class="relative p-2 text-gray-600 hover:text-primary-600 transition">
                         <i class="fas fa-shopping-cart text-xl"></i>
                         <span id="cartBadge"
                             class="absolute -top-1 -right-1 bg-primary-600 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center"><?php echo $_cart_count; ?></span>
@@ -347,7 +324,7 @@ $donate_href = $is_home ? '#campaigns' : BASE_URL . '/index.php#campaigns';
                                 ?>
 
                                 <?php if (!$isDefault): ?>
-                                    <img src="<?php echo BASE_URL; ?>/<?php echo $avatarSrc; ?>" alt="Profile" class="w-full h-full object-cover"
+                                    <img src="/<?php echo $avatarSrc; ?>" alt="Profile" class="w-full h-full object-cover"
                                         onerror="this.onerror=null; this.parentElement.innerHTML='<i class=\'fas fa-user text-lg text-primary-600\'></i>'">
                                 <?php else: ?>
                                     <i class="fas fa-user text-lg text-primary-600"></i>
@@ -366,33 +343,33 @@ $donate_href = $is_home ? '#campaigns' : BASE_URL . '/index.php#campaigns';
                                     </p>
                                 </div>
 
-                                <a href="<?php echo BASE_URL; ?>/users/profile.php"
+                                <a href="/users/profile.php"
                                     class="block px-4 py-2 text-gray-700 hover:bg-primary-50 hover:text-primary-600 transition duration-150 text-sm">
                                     <i class="fas fa-user-circle mr-2 w-4"></i>Profile
                                 </a>
-                                <a href="<?php echo BASE_URL; ?>/users/sertifikat.php"
+                                <a href="/users/sertifikat.php"
                                     class="block px-4 py-2 text-gray-700 hover:bg-primary-50 hover:text-primary-600 transition duration-150 text-sm">
                                     <i class="fas fa-certificate mr-2 w-4"></i>Sertifikat
                                 </a>
-                                <a href="<?php echo BASE_URL; ?>/users/riwayat.php"
+                                <a href="/users/riwayat.php"
                                     class="block px-4 py-2 text-gray-700 hover:bg-primary-50 hover:text-primary-600 transition duration-150 text-sm">
                                     <i class="fas fa-history mr-2 w-4"></i>Histori Donasi
                                 </a>
-                                <a href="<?php echo BASE_URL; ?>/users/riwayat-pengajuan.php"
+                                <a href="/users/riwayat-pengajuan.php"
                                     class="block px-4 py-2 text-gray-700 hover:bg-primary-50 hover:text-primary-600 transition duration-150 text-sm">
                                     <i class="fas fa-list-alt mr-2 w-4"></i>Riwayat Pengajuan
                                 </a>
                                 
                                 <?php if (isset($_SESSION['admin_logged_in']) && $_SESSION['admin_logged_in'] === true): ?>
                                 <div class="border-t border-gray-100 my-1"></div>
-                                <a href="<?php echo BASE_URL; ?>/admin/index.php"
+                                <a href="/admin/index.php"
                                     class="block px-4 py-2 text-primary-700 hover:bg-primary-50 transition duration-150 text-sm font-semibold">
                                     <i class="fas fa-tachometer-alt mr-2 w-4"></i>Dashboard Admin
                                 </a>
                                 <?php endif; ?>
 
                                 <div class="border-t border-gray-100 my-1"></div>
-                                <a href="<?php echo BASE_URL; ?>/auth.php?action=logout"
+                                <a href="/auth.php?action=logout"
                                     class="block px-4 py-2 text-red-600 hover:bg-red-50 transition duration-150 text-sm font-semibold">
                                     <i class="fas fa-sign-out-alt mr-2 w-4"></i>Logout
                                 </a>
@@ -400,7 +377,7 @@ $donate_href = $is_home ? '#campaigns' : BASE_URL . '/index.php#campaigns';
                         </div>
 
                     <?php else: ?>
-                        <a href="<?php echo BASE_URL; ?>/login.php"
+                        <a href="/login.php"
                             class="inline-flex items-center px-4 py-2 border-2 border-primary-600 text-primary-700 font-semibold rounded-lg hover:bg-primary-50 transition text-sm">
                             <i class="fas fa-sign-in-alt mr-2"></i>Login
                         </a>
@@ -418,7 +395,7 @@ $donate_href = $is_home ? '#campaigns' : BASE_URL . '/index.php#campaigns';
             <div class="md:hidden flex justify-between items-center h-20">
 
                 <!-- Logo -->
-                <a href="<?php echo BASE_URL; ?>/index.php" class="flex items-center space-x-2 flex-shrink-0">
+                <a href="/index.php" class="flex items-center space-x-2 flex-shrink-0">
                     <div class="relative">
                         <div class="absolute inset-0 bg-primary-600 rounded-lg blur-sm opacity-60"></div>
                         <div class="relative bg-gradient-to-br from-primary-600 to-primary-700 rounded-lg p-1.5">
@@ -436,11 +413,6 @@ $donate_href = $is_home ? '#campaigns' : BASE_URL . '/index.php#campaigns';
 
                 <!-- Mobile Menu Trigger & Profile -->
                 <div class="flex items-center gap-3">
-                    <!-- Dev OS Badge Mobile -->
-                    <div class="flex items-center bg-gray-100 text-gray-600 border border-gray-200 text-[10px] font-medium px-2 py-1 rounded-lg mr-1" title="OS Anda: <?php echo $current_os; ?>">
-                        <i class="<?php echo ($current_os === 'Mac OS') ? 'fab fa-apple' : (($current_os === 'Windows') ? 'fab fa-windows' : 'fas fa-laptop'); ?> mr-1"></i>
-                        <?php echo $current_os; ?>
-                    </div>
 
                     <!-- Hamburger Button -->
                     <button id="mobileMenuBtn" class="p-2 text-gray-600 hover:text-primary-600 transition">
@@ -460,7 +432,7 @@ $donate_href = $is_home ? '#campaigns' : BASE_URL . '/index.php#campaigns';
                                 ?>
 
                                 <?php if (!$isDefault): ?>
-                                    <img src="<?php echo BASE_URL; ?>/<?php echo $avatarSrc; ?>" alt="Profile" class="w-full h-full object-cover"
+                                    <img src="/<?php echo $avatarSrc; ?>" alt="Profile" class="w-full h-full object-cover"
                                         onerror="this.onerror=null; this.parentElement.innerHTML='<i class=\'fas fa-user text-lg text-primary-600\'></i>'">
                                 <?php else: ?>
                                     <i class="fas fa-user text-lg text-primary-600"></i>
@@ -479,33 +451,33 @@ $donate_href = $is_home ? '#campaigns' : BASE_URL . '/index.php#campaigns';
                                     </p>
                                 </div>
 
-                                <a href="<?php echo BASE_URL; ?>/users/profile.php"
+                                <a href="/users/profile.php"
                                     class="block px-4 py-2 text-gray-700 hover:bg-primary-50 hover:text-primary-600 transition duration-150 text-sm">
                                     <i class="fas fa-user-circle mr-2 w-4"></i>Profile
                                 </a>
-                                <a href="<?php echo BASE_URL; ?>/users/sertifikat.php"
+                                <a href="/users/sertifikat.php"
                                     class="block px-4 py-2 text-gray-700 hover:bg-primary-50 hover:text-primary-600 transition duration-150 text-sm">
                                     <i class="fas fa-certificate mr-2 w-4"></i>Sertifikat
                                 </a>
-                                <a href="<?php echo BASE_URL; ?>/users/riwayat.php"
+                                <a href="/users/riwayat.php"
                                     class="block px-4 py-2 text-gray-700 hover:bg-primary-50 hover:text-primary-600 transition duration-150 text-sm">
                                     <i class="fas fa-history mr-2 w-4"></i>Histori Donasi
                                 </a>
-                                <a href="<?php echo BASE_URL; ?>/users/riwayat-pengajuan.php"
+                                <a href="/users/riwayat-pengajuan.php"
                                     class="block px-4 py-2 text-gray-700 hover:bg-primary-50 hover:text-primary-600 transition duration-150 text-sm">
                                     <i class="fas fa-list-alt mr-2 w-4"></i>Riwayat Pengajuan
                                 </a>
                                 
                                 <?php if (isset($_SESSION['admin_logged_in']) && $_SESSION['admin_logged_in'] === true): ?>
                                 <div class="border-t border-gray-100 my-1"></div>
-                                <a href="<?php echo BASE_URL; ?>/admin/index.php"
+                                <a href="/admin/index.php"
                                     class="block px-4 py-2 text-primary-700 hover:bg-primary-50 transition duration-150 text-sm font-semibold">
                                     <i class="fas fa-tachometer-alt mr-2 w-4"></i>Dashboard Admin
                                 </a>
                                 <?php endif; ?>
 
                                 <div class="border-t border-gray-100 my-1"></div>
-                                <a href="<?php echo BASE_URL; ?>/auth.php?action=logout"
+                                <a href="/auth.php?action=logout"
                                     class="block px-4 py-2 text-red-600 hover:bg-red-50 transition duration-150 text-sm font-semibold">
                                     <i class="fas fa-sign-out-alt mr-2 w-4"></i>Logout
                                 </a>
@@ -513,7 +485,7 @@ $donate_href = $is_home ? '#campaigns' : BASE_URL . '/index.php#campaigns';
                         </div>
 
                     <?php else: ?>
-                        <a href="<?php echo BASE_URL; ?>/login.php"
+                        <a href="/login.php"
                             class="inline-flex items-center px-3 py-2 border-2 border-primary-600 text-primary-700 font-semibold rounded-lg hover:bg-primary-50 transition text-sm">
                             <i class="fas fa-sign-in-alt mr-1"></i>Login
                         </a>
@@ -525,11 +497,11 @@ $donate_href = $is_home ? '#campaigns' : BASE_URL . '/index.php#campaigns';
             <div id="mobileMenu"
                 class="hidden md:hidden overflow-y-auto bg-white border-t border-gray-100 max-h-0 transition-all duration-300 ease-in-out">
                 <div class="px-3 py-2 space-y-1">
-                    <a href="<?php echo BASE_URL; ?>/index.php"
+                    <a href="/index.php"
                         class="<?php echo $is_home ? 'bg-primary-50 text-primary-700 font-semibold' : 'text-gray-700 hover:text-primary-600'; ?> block px-3 py-2 rounded-lg transition text-sm">
                         <i class="fas fa-home mr-2 w-4"></i><span class="align-middle">Beranda</span>
                     </a>
-                    <a href="<?php echo BASE_URL; ?>/campaign.php"
+                    <a href="/campaign.php"
                         class="<?php echo $is_campaign ? 'bg-primary-50 text-primary-700 font-semibold' : 'text-gray-700 hover:text-primary-600'; ?> block px-3 py-2 rounded-lg transition text-sm">
                         <i class="fas fa-handshake mr-2 w-4"></i><span class="align-middle">Campaign</span>
                     </a>
@@ -567,17 +539,17 @@ $donate_href = $is_home ? '#campaigns' : BASE_URL . '/index.php#campaigns';
                         <i class="fas fa-cogs mr-2 w-4"></i><span class="align-middle">Cara Kerja</span>
                     </a>
 
-                    <a href="<?php echo BASE_URL; ?>/laporan.php"
+                    <a href="/laporan.php"
                         class="<?php echo $is_laporan ? 'bg-primary-50 text-primary-700 font-semibold' : 'text-gray-700 hover:text-primary-600'; ?> block px-3 py-2 rounded-lg transition text-sm">
                         <i class="fas fa-chart-bar mr-2 w-4"></i><span class="align-middle">Laporan</span>
                     </a>
 
-                    <a href="<?php echo BASE_URL; ?>/tentang.php"
+                    <a href="/tentang.php"
                         class="<?php echo $is_tentang ? 'bg-primary-50 text-primary-700 font-semibold' : 'text-gray-700 hover:text-primary-600'; ?> block px-3 py-2 rounded-lg transition text-sm">
                         <i class="fas fa-info-circle mr-2 w-4"></i><span class="align-middle">Tentang</span>
                     </a>
 
-                    <a href="<?php echo BASE_URL; ?>/cart.php"
+                    <a href="/cart.php"
                         class="text-gray-700 hover:text-primary-600 block px-3 py-2 rounded-lg transition text-sm">
                         <i class="fas fa-shopping-cart mr-2 w-4"></i><span class="align-middle">Keranjang</span>
                         <span class="ml-2 bg-primary-600 text-white text-xs font-bold rounded-full px-2 py-0.5"><?php echo $_cart_count; ?></span>

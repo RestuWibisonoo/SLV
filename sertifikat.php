@@ -23,8 +23,13 @@ if (empty($cert_no)) {
     }
 }
 
-// Generate URL Verifikasi
-$verify_url = BASE_URL . "/sertifikat.php?no=" . urlencode($cert['certificate_number']);
+// Generate URL Verifikasi (gunakan domain dari request saat ini)
+$current_protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+if (!empty($_SERVER['HTTP_X_FORWARDED_PROTO'])) {
+    $current_protocol = $_SERVER['HTTP_X_FORWARDED_PROTO'];
+}
+$current_host = $_SERVER['HTTP_HOST'] ?? 'localhost';
+$verify_url = $current_protocol . "://" . $current_host . "/sertifikat.php?no=" . urlencode($cert['certificate_number']);
 // Generate URL QR Code menggunakan API
 $qr_url = "https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=" . urlencode($verify_url);
 
@@ -455,7 +460,7 @@ $qr_url = "https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=" . url
         <button onclick="window.print()" class="btn btn-primary">
             <i class="fas fa-print"></i> Cetak PDF
         </button>
-        <a href="<?= BASE_URL ?>/index.php" class="btn btn-secondary">
+        <a href="/index.php" class="btn btn-secondary">
             <i class="fas fa-home"></i> Kembali ke Beranda
         </a>
     </div>
