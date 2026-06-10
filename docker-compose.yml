@@ -14,6 +14,7 @@ services:
       - user-app
       - campaign-app
       - transaction-app
+      - admin-app
     networks:
       - sodakoh_network
 
@@ -103,6 +104,25 @@ services:
       - ./config/sodakoh_pohon.sql:/docker-entrypoint-initdb.d/init.sql
     networks:
       - sodakoh_network
+
+  # 5. Admin Service
+  admin-app:
+    build:
+      context: ./admin-service
+      dockerfile: Dockerfile
+    container_name: admin-app
+    restart: unless-stopped
+    volumes:
+      - ./admin-service:/var/www/html
+      - ./campaign-service/uploads:/var/www/html/uploads
+    env_file:
+      - ./admin-service/.env
+    networks:
+      - sodakoh_network
+    depends_on:
+      - user-db
+      - campaign-db
+      - transaction-db
 
 networks:
   sodakoh_network:
