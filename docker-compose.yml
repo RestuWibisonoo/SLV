@@ -1,51 +1,106 @@
 version: '3.8'
 
 services:
-  # 1. Nginx Reverse Proxy / Web Server
-  webserver:
+  # 1. API Gateway (Nginx)
+  api-gateway:
     image: nginx:alpine
-    container_name: sodakoh_web
+    container_name: api-gateway
     restart: unless-stopped
     ports:
       - "80:80"
     volumes:
-      - ./:/var/www/html
       - ./nginx.conf:/etc/nginx/conf.d/default.conf
     depends_on:
-      - app
+      - user-app
+      - campaign-app
+      - transaction-app
     networks:
       - sodakoh_network
 
-  # 2. PHP-FPM Application Environment
-  app:
+  # 2. User Service
+  user-app:
     build:
-      context: .
+      context: ./user-service
       dockerfile: Dockerfile
-    container_name: sodakoh_app
+    container_name: user-app
     restart: unless-stopped
     volumes:
-      - ./:/var/www/html
+      - ./user-service:/var/www/html
     env_file:
-      - .env
+      - ./user-service/.env
+    networks:
+      - sodakoh_network
+    depends_on:
+      - user-db
+
+  user-db:
+    image: mariadb:10.6
+    container_name: user-db
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: db_user
+    volumes:
+      - user_db_data:/var/lib/mysql
+      - ./config/sodakoh_pohon.sql:/docker-entrypoint-initdb.d/init.sql
     networks:
       - sodakoh_network
 
-  # 3. Database Server
-  db:
-    image: mariadb:10.6
-    container_name: sodakoh_db
+  # 3. Campaign Service
+  campaign-app:
+    build:
+      context: ./campaign-service
+      dockerfile: Dockerfile
+    container_name: campaign-app
     restart: unless-stopped
-    env_file:
-      - .env
-    environment:
-      MYSQL_ROOT_PASSWORD: ${DB_PASS}
-      MYSQL_DATABASE: ${DB_NAME}
-      MYSQL_USER: ${DB_USER}
-      MYSQL_PASSWORD: ${DB_PASS}
     volumes:
-      - db_data:/var/lib/mysql
-      # Uncomment the line below to auto-import SQL file on first run if needed
-      # - ./config/sodakoh_pohon.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./campaign-service:/var/www/html
+    env_file:
+      - ./campaign-service/.env
+    networks:
+      - sodakoh_network
+    depends_on:
+      - campaign-db
+
+  campaign-db:
+    image: mariadb:10.6
+    container_name: campaign-db
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: db_campaign
+    volumes:
+      - campaign_db_data:/var/lib/mysql
+      - ./config/sodakoh_pohon.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - sodakoh_network
+
+  # 4. Transaction Service
+  transaction-app:
+    build:
+      context: ./transaction-service
+      dockerfile: Dockerfile
+    container_name: transaction-app
+    restart: unless-stopped
+    volumes:
+      - ./transaction-service:/var/www/html
+    env_file:
+      - ./transaction-service/.env
+    networks:
+      - sodakoh_network
+    depends_on:
+      - transaction-db
+
+  transaction-db:
+    image: mariadb:10.6
+    container_name: transaction-db
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: db_transaction
+    volumes:
+      - transaction_db_data:/var/lib/mysql
+      - ./config/sodakoh_pohon.sql:/docker-entrypoint-initdb.d/init.sql
     networks:
       - sodakoh_network
 
@@ -54,4 +109,6 @@ networks:
     driver: bridge
 
 volumes:
-  db_data:
+  user_db_data:
+  campaign_db_data:
+  transaction_db_data:
