@@ -1,0 +1,291 @@
+<?php
+// campaign.php - Halaman Daftar Campaign Publik
+session_start();
+
+// Prevent caching untuk memastikan data always fresh
+header("Cache-Control: no-cache, no-store, must-revalidate, max-age=0");
+header("Pragma: no-cache");
+header("Expires: 0");
+
+// ================= KONEKSI DATABASE =================
+require_once 'config/koneksi.php';
+require_once 'helpers/campaign.php';
+
+// ================= AMBIL DATA CAMPAIGN DARI DATABASE =================
+// Get filter dan sort parameters
+$category_filter = isset($_GET['category']) ? $_GET['category'] : 'all';
+$sort_by = isset($_GET['sort']) ? $_GET['sort'] : 'popular';
+
+// Pagination parameters
+$page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
+if ($page < 1) $page = 1;
+$limit = 6;
+$offset = ($page - 1) * $limit;
+
+// Ambil total campaign untuk pagination
+$total_campaigns_filtered = getTotalCampaigns($category_filter);
+$total_pages = ceil($total_campaigns_filtered / $limit);
+
+// Ambil campaigns dengan filter, sort, dan pagination
+$campaigns = getCampaigns($category_filter, $sort_by, $limit, $offset);
+
+// Ambil statistik global
+$global_stats = getCampaignStats();
+$total_active_campaigns = getTotalCampaigns('all');
+
+// Ambil semua kategori untuk filter buttons
+$categories = getCampaignCategories();
+?>
+<?php include 'includes/header.php'; ?>
+
+    <!-- Hero Section -->
+    <section class="pt-32 pb-12 bg-gradient-to-b from-primary-50 to-white">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="text-center max-w-3xl mx-auto" data-aos="fade-up">
+                <h1 class="text-4xl md:text-5xl font-extrabold text-gray-900 mb-4">
+                    Semua Campaign Penanaman
+                </h1>
+                <p class="text-xl text-gray-600 mb-8">
+                    Pilih program penanaman pohon sesuai dengan passion dan lokasi yang kamu inginkan
+                </p>
+                
+                <!-- Stats -->
+                <div class="flex justify-center gap-8">
+                    <div class="text-center">
+                        <div class="text-3xl font-bold text-primary-700"><?php echo $total_active_campaigns; ?></div>
+                        <div class="text-sm text-gray-500">Campaign Aktif</div>
+                    </div>
+                    <div class="text-center">
+                        <div class="text-3xl font-bold text-primary-700"><?php echo number_format($global_stats['total_trees']); ?></div>
+                        <div class="text-sm text-gray-500">Pohon Terkumpul</div>
+                    </div>
+                    <div class="text-center">
+                        <div class="text-3xl font-bold text-primary-700"><?php echo number_format($global_stats['total_donors']); ?></div>
+                        <div class="text-sm text-gray-500">Total Donatur</div>
+                    </div>
+                </div>
+                
+                <!-- CTA Pengajuan Campaign -->
+                <div class="mt-10" data-aos="fade-up" data-aos-delay="200">
+                    <div class="bg-white/60 backdrop-blur-md rounded-2xl p-6 border border-gray-100 shadow-sm inline-block">
+                        <p class="text-gray-700 mb-4 font-medium">Punya lahan atau komunitas yang siap menanam pohon?</p>
+                        <a href="deskripsi-pengajuan.php" class="inline-flex items-center px-6 py-3 bg-primary-600 text-white rounded-full font-semibold hover:bg-primary-700 hover:shadow-lg hover:shadow-primary-600/30 transition duration-300">
+                            <i class="fas fa-plus-circle mr-2"></i>
+                            Buat Campaign Sendiri
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Filter & Campaign Section -->
+    <section class="py-12">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <!-- Filter -->
+            <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8" data-aos="fade-up">
+                <div class="flex items-center gap-3 overflow-x-auto pb-2">
+                    <a href="?category=all&sort=<?php echo $sort_by; ?>" 
+                       class="filter-btn px-5 py-2 rounded-full text-sm font-semibold transition whitespace-nowrap <?php echo $category_filter == 'all' ? 'active bg-primary-600 text-white' : 'bg-white text-gray-700 hover:bg-primary-50 hover:text-primary-700 border border-gray-200'; ?>">
+                        Semua
+                    </a>
+                    <?php foreach ($categories as $cat): ?>
+                    <a href="?category=<?php echo urlencode($cat); ?>&sort=<?php echo $sort_by; ?>" 
+                       class="filter-btn px-5 py-2 rounded-full text-sm font-medium transition whitespace-nowrap <?php echo $category_filter == $cat ? 'active bg-primary-600 text-white' : 'bg-white text-gray-700 hover:bg-primary-50 hover:text-primary-700 border border-gray-200'; ?>">
+                        <?php echo htmlspecialchars($cat); ?>
+                    </a>
+                    <?php endforeach; ?>
+                </div>
+                
+                <div class="flex items-center gap-2">
+                    <span class="text-sm text-gray-500">Urutkan:</span>
+                    <select id="sortSelect" class="bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600">
+                        <option value="popular" <?php echo $sort_by == 'popular' ? 'selected' : ''; ?>>Paling Populer</option>
+                        <option value="deadline" <?php echo $sort_by == 'deadline' ? 'selected' : ''; ?>>Deadline Terdekat</option>
+                        <option value="progress" <?php echo $sort_by == 'progress' ? 'selected' : ''; ?>>Progress Tertinggi</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Campaign Grid -->
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                <?php foreach ($campaigns as $index => $campaign): 
+                    $progress = ($campaign['current_trees'] / $campaign['target_trees']) * 100;
+                    $progress = round($progress, 1);
+                ?>
+                <div class="campaign-card group" data-aos="fade-up" data-aos-delay="<?php echo ($index % 3) * 100; ?>">
+                    <!-- Image Container -->
+                    <div class="relative h-56 overflow-hidden">
+                        <img src="<?php echo $campaign['image']; ?>" 
+                             alt="<?php echo $campaign['title']; ?>"
+                             class="campaign-image w-full h-full object-cover"
+                             loading="lazy"
+                             crossorigin="anonymous">
+                        
+                        <!-- Overlay Gradient -->
+                        <div class="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent"></div>
+                        
+                        <!-- Badges -->
+                        <div class="absolute top-4 left-4 flex gap-2">
+                            <?php if ($index < 2): ?>
+                            <span class="badge-new px-3 py-1 rounded-full text-white text-xs font-bold">
+                                <i class="fas fa-star mr-1"></i>BARU
+                            </span>
+                            <?php endif; ?>
+                            <?php if ($campaign['days_left'] <= 20): ?>
+                            <span class="badge-urgent px-3 py-1 rounded-full text-white text-xs font-bold">
+                                <i class="fas fa-clock mr-1"></i>URGENT
+                            </span>
+                            <?php endif; ?>
+                            <?php if ($campaign['donors'] > 200): ?>
+                            <span class="badge-popular px-3 py-1 rounded-full text-white text-xs font-bold">
+                                <i class="fas fa-fire mr-1"></i>POPULER
+                            </span>
+                            <?php endif; ?>
+                        </div>
+                        
+                        <!-- Price Tag -->
+                        <div class="absolute bottom-4 left-4">
+                            <div class="bg-white/90 backdrop-blur-sm rounded-xl px-4 py-2">
+                                <span class="text-xs text-gray-600 block">Mulai dari</span>
+                                <span class="text-xl font-bold text-primary-700">Rp <?php echo number_format($campaign['price_per_tree']); ?></span>
+                                <span class="text-xs text-gray-500">/pohon</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Content -->
+                    <div class="p-6">
+                        <!-- Category -->
+                        <div class="mb-2">
+                            <span class="text-xs font-semibold text-primary-600 bg-primary-50 px-2 py-1 rounded-full">
+                                <?php echo $campaign['category']; ?>
+                            </span>
+                        </div>
+                        
+                        <!-- Title & Location -->
+                        <div class="mb-4">
+                            <h3 class="text-xl font-bold text-gray-900 mb-2 line-clamp-2 group-hover:text-primary-700 transition">
+                                <?php echo $campaign['title']; ?>
+                            </h3>
+                            <div class="flex items-center text-gray-500 text-sm">
+                                <i class="fas fa-map-marker-alt mr-2 text-primary-600"></i>
+                                <?php echo $campaign['location']; ?>
+                                <span class="mx-2">•</span>
+                                <i class="fas fa-leaf mr-2 text-primary-600"></i>
+                                <?php echo $campaign['tree_type']; ?>
+                            </div>
+                        </div>
+                        
+                        <!-- Description -->
+                        <p class="text-gray-600 text-sm mb-4 line-clamp-2">
+                            <?php echo $campaign['description']; ?>
+                        </p>
+                        
+                        <!-- Progress Bar -->
+                        <div class="mb-4">
+                            <div class="flex justify-between text-sm mb-2">
+                                <span class="font-semibold text-gray-900"><?php echo number_format($campaign['current_trees']); ?> pohon</span>
+                                <span class="text-gray-500">Target <?php echo number_format($campaign['target_trees']); ?> pohon</span>
+                            </div>
+                            <div class="progress-bar">
+                                <div class="progress-fill" style="width: <?php echo $progress; ?>%"></div>
+                            </div>
+                            <div class="flex justify-between mt-2">
+                                <span class="text-xs text-gray-500">
+                                    <i class="fas fa-users mr-1"></i><?php echo $campaign['donors']; ?> donatur
+                                </span>
+                                <span class="text-xs font-semibold text-primary-700">
+                                    <?php echo $progress; ?>% terkumpul
+                                </span>
+                            </div>
+                        </div>
+                        
+                        <!-- Footer Stats -->
+                        <div class="flex items-center justify-between pt-4 border-t border-gray-100">
+                            <div class="flex items-center text-sm">
+                                <i class="far fa-clock mr-2 text-gray-400"></i>
+                                <span class="text-gray-600"><?php echo $campaign['days_left']; ?> hari lagi</span>
+                            </div>
+                            <a href="campaign-detail.php?id=<?php echo $campaign['id']; ?>" 
+                               class="inline-flex items-center text-primary-700 font-semibold hover:text-primary-800 transition group">
+                                Lihat Detail
+                                <i class="fas fa-arrow-right ml-2 transform group-hover:translate-x-1 transition"></i>
+                            </a>
+                        </div>
+                    </div>
+                </div>
+                <?php endforeach; ?>
+            </div>
+            
+            <!-- Pagination -->
+            <?php if ($total_pages > 1): ?>
+            <div class="mt-12 flex justify-center">
+                <div class="flex items-center space-x-2">
+                    <!-- Prev Button -->
+                    <?php if ($page > 1): ?>
+                    <a href="?category=<?php echo urlencode($category_filter); ?>&sort=<?php echo $sort_by; ?>&page=<?php echo $page - 1; ?>" class="w-10 h-10 flex items-center justify-center border border-gray-200 rounded-lg text-gray-500 hover:bg-primary-600 hover:text-white hover:border-primary-600 transition">
+                        <i class="fas fa-chevron-left"></i>
+                    </a>
+                    <?php else: ?>
+                    <button disabled class="w-10 h-10 flex items-center justify-center border border-gray-200 rounded-lg text-gray-300 cursor-not-allowed">
+                        <i class="fas fa-chevron-left"></i>
+                    </button>
+                    <?php endif; ?>
+
+                    <!-- Page Numbers -->
+                    <?php for ($i = 1; $i <= $total_pages; $i++): ?>
+                        <?php if ($i == $page): ?>
+                        <button class="w-10 h-10 flex items-center justify-center bg-primary-600 text-white rounded-lg"><?php echo $i; ?></button>
+                        <?php else: ?>
+                        <a href="?category=<?php echo urlencode($category_filter); ?>&sort=<?php echo $sort_by; ?>&page=<?php echo $i; ?>" class="w-10 h-10 flex items-center justify-center border border-gray-200 rounded-lg text-gray-700 hover:bg-primary-600 hover:text-white hover:border-primary-600 transition"><?php echo $i; ?></a>
+                        <?php endif; ?>
+                    <?php endfor; ?>
+
+                    <!-- Next Button -->
+                    <?php if ($page < $total_pages): ?>
+                    <a href="?category=<?php echo urlencode($category_filter); ?>&sort=<?php echo $sort_by; ?>&page=<?php echo $page + 1; ?>" class="w-10 h-10 flex items-center justify-center border border-gray-200 rounded-lg text-gray-500 hover:bg-primary-600 hover:text-white hover:border-primary-600 transition">
+                        <i class="fas fa-chevron-right"></i>
+                    </a>
+                    <?php else: ?>
+                    <button disabled class="w-10 h-10 flex items-center justify-center border border-gray-200 rounded-lg text-gray-300 cursor-not-allowed">
+                        <i class="fas fa-chevron-right"></i>
+                    </button>
+                    <?php endif; ?>
+                </div>
+            </div>
+            <?php endif; ?>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <?php include 'includes/footer.php'; ?>
+
+    <script src="https://unpkg.com/aos@2.3.1/dist/aos.js"></script>
+    <script>
+        AOS.init({
+            duration: 800,
+            once: true
+        });
+        
+        // Sort functionality
+        document.getElementById('sortSelect').addEventListener('change', function() {
+            const sortValue = this.value;
+            const currentCategory = '<?php echo $category_filter; ?>';
+            window.location.href = '?category=' + currentCategory + '&sort=' + sortValue;
+        });
+        
+        // Navbar background on scroll
+        window.addEventListener('scroll', function() {
+            const nav = document.querySelector('nav');
+            if (window.scrollY > 50) {
+                nav.classList.add('bg-white/95', 'backdrop-blur-md', 'shadow-lg');
+                nav.classList.remove('glass-effect');
+            } else {
+                nav.classList.remove('bg-white/95', 'backdrop-blur-md', 'shadow-lg');
+                nav.classList.add('glass-effect');
+            }
+        });
+    </script>
+</body>
+</html>

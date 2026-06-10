@@ -1,0 +1,758 @@
+<?php
+// controllers/adminController.php
+// Controller untuk menangani semua AJAX request admin
+
+// Start output buffering untuk mencegah output accidental
+ob_start();
+
+// Set error handling strict
+error_reporting(E_ALL);
+ini_set('display_errors', '0'); // Jangan display error ke output, log saja
+ini_set('log_errors', '1');
+
+// Custom error handler untuk mencegah HTML output
+set_error_handler(function($errno, $errstr, $errfile, $errline) {
+    global $json_errors;
+    if (!isset($json_errors)) {
+        $json_errors = [];
+    }
+    $json_errors[] = "[$errno] $errstr (File: {$errfile}:{$errline})";
+    return true; // Suppress default PHP error handler
+});
+
+require_once dirname(__DIR__) . '/config/koneksi.php';
+require_once dirname(__DIR__) . '/models/Campaign.php';
+require_once dirname(__DIR__) . '/models/Donation.php';
+require_once dirname(__DIR__) . '/models/CampaignSubmission.php';
+
+// Cek autentikasi admin
+if (!isAdminLoggedIn()) {
+    ob_clean(); // Clear any buffered output
+    header('Content-Type: application/json');
+    echo json_encode(['success' => false, 'message' => 'Unauthorized']);
+    exit;
+}
+
+$action = isset($_GET['action']) ? $_GET['action'] : '';
+$campaign = new Campaign();
+$donation = new Donation();
+$submission = new CampaignSubmission();
+
+switch ($action) {
+    // ============ CAMPAIGN ============
+    case 'store_campaign':
+        storeCampaign($campaign);
+        break;
+
+    case 'update_campaign':
+        updateCampaign($campaign);
+        break;
+
+    case 'delete_campaign':
+        deleteCampaign($campaign);
+        break;
+
+    // ============ DONATION ============
+    case 'confirm_donation':
+        confirmDonation($donation);
+        break;
+
+    case 'cancel_donation':
+        cancelDonation($donation);
+        break;
+
+    case 'export_donations':
+        exportDonations($donation);
+        break;
+
+    // ============ PLANTING ============
+    case 'store_planting':
+        storePlanting($campaign);
+        break;
+
+    case 'update_planting':
+        updatePlanting($campaign);
+        break;
+
+    case 'delete_planting':
+        deletePlanting();
+        break;
+
+    // ============ SUBMISSION ============
+    case 'update_submission_status':
+        updateSubmissionStatus($submission, $campaign);
+        break;
+
+    case 'delete_submission':
+        deleteSubmission($submission);
+        break;
+
+    // ============ API ============
+    case 'get_stats':
+        getStats($campaign, $donation);
+        break;
+
+    case 'get_chart_data':
+        getChartData($donation);
+        break;
+
+    default:
+        jsonResponse(false, 'Action tidak valid');
+        break;
+}
+
+// ============================================================
+// HELPER
+// ============================================================
+function jsonResponse($success, $message, $data = [])
+{
+    // Clear any buffered output
+    ob_clean();
+    
+    // Set JSON header
+    header('Content-Type: application/json; charset=utf-8');
+    
+    // Include any captured errors
+    global $json_errors;
+    $response = ['success' => $success, 'message' => $message];
+    
+    if (!empty($json_errors)) {
+        $response['debug_errors'] = $json_errors; // For debugging, remove in production
+    }
+    
+    if (!empty($data)) {
+        $response = array_merge($response, $data);
+    }
+    
+    echo json_encode($response, JSON_UNESCAPED_SLASHES);
+    exit;
+}
+
+/**
+ * Upload foto thumbnail penanaman ke folder uploads/plantings/
+ * @param array $file - $_FILES['image']
+ * @return string|false - path relatif jika sukses, false jika gagal
+ */
+function uploadPlantingImage($file)
+{
+    $target_dir = UPLOAD_PATH . 'plantings/';
+
+    if (!file_exists($target_dir)) {
+        mkdir($target_dir, 0777, true);
+    }
+
+    if (!is_writable($target_dir)) {
+        error_log("uploadPlantingImage: Directory not writable: " . $target_dir);
+        return false;
+    }
+
+    $check = getimagesize($file['tmp_name']);
+    if ($check === false) {
+        error_log("uploadPlantingImage: File bukan gambar valid: " . $file['name']);
+        return false;
+    }
+
+    if ($file['size'] > 5000000) {
+        error_log("uploadPlantingImage: File terlalu besar: " . $file['size']);
+        return false;
+    }
+
+    $file_extension = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
+    $allowed_types  = ['jpg', 'jpeg', 'png', 'webp'];
+    if (!in_array($file_extension, $allowed_types)) {
+        error_log("uploadPlantingImage: Format tidak diizinkan: " . $file_extension);
+        return false;
+    }
+
+    $file_name   = uniqid() . '.' . $file_extension;
+    $target_file = $target_dir . $file_name;
+
+    if (move_uploaded_file($file['tmp_name'], $target_file)) {
+        return 'uploads/plantings/' . $file_name;
+    }
+
+    error_log("uploadPlantingImage: move_uploaded_file gagal. tmp=" . $file['tmp_name'] . " target=" . $target_file);
+    return false;
+}
+
+/**
+ * Upload beberapa foto galeri penanaman ke folder uploads/planting_gallery/
+ * @param array $files - $_FILES['gallery_images'] dalam format array
+ * @param int $planting_id - ID planting
+ * @return array - list path yang berhasil diupload
+ */
+function uploadPlantingGalleryImages($files, $planting_id)
+{
+    $target_dir = UPLOAD_PATH . 'planting_gallery/';
+    if (!file_exists($target_dir)) {
+        mkdir($target_dir, 0777, true);
+    }
+
+    $allowed_types = ['jpg', 'jpeg', 'png', 'webp'];
+    $conn = getDB();
+    $now  = date('Y-m-d H:i:s');
+    $uploaded_paths = [];
+
+    // Normalkan struktur $_FILES untuk array input
+    $count = count($files['name']);
+    for ($i = 0; $i < $count; $i++) {
+        if ($files['error'][$i] !== UPLOAD_ERR_OK) continue;
+        if ($files['size'][$i] > 5000000) continue;
+
+        $ext = strtolower(pathinfo($files['name'][$i], PATHINFO_EXTENSION));
+        if (!in_array($ext, $allowed_types)) continue;
+
+        $check = getimagesize($files['tmp_name'][$i]);
+        if ($check === false) continue;
+
+        $file_name   = uniqid('pg_') . '.' . $ext;
+        $target_file = $target_dir . $file_name;
+
+        if (move_uploaded_file($files['tmp_name'][$i], $target_file)) {
+            $path     = $conn->real_escape_string('uploads/planting_gallery/' . $file_name);
+            $planting = (int)$planting_id;
+            $conn->query("INSERT INTO planting_gallery (planting_id, image_url, created_at) VALUES ({$planting}, '{$path}', '{$now}')");
+            $uploaded_paths[] = 'uploads/planting_gallery/' . $file_name;
+        }
+    }
+
+    return $uploaded_paths;
+}
+
+/**
+ * Hapus foto galeri penanaman berdasarkan ID-nya
+ * @param int $gallery_id
+ */
+function deletePlantingGalleryItem($gallery_id)
+{
+    $conn = getDB();
+    $id   = (int)$gallery_id;
+    $row  = $conn->query("SELECT image_url FROM planting_gallery WHERE id = {$id}")->fetch_assoc();
+    if ($row) {
+        $file_path = dirname(__DIR__) . '/' . $row['image_url'];
+        if (file_exists($file_path)) {
+            @unlink($file_path);
+        }
+        $conn->query("DELETE FROM planting_gallery WHERE id = {$id}");
+    }
+}
+
+// ============================================================
+// CAMPAIGN FUNCTIONS
+// ============================================================
+function storeCampaign($campaign)
+{
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        jsonResponse(false, 'Method tidak diizinkan');
+    }
+
+    // Validasi
+    $errors = validateCampaign($_POST);
+    if (!empty($errors)) {
+        jsonResponse(false, 'Validasi gagal', ['errors' => $errors]);
+    }
+
+    try {
+        // Handle upload gambar
+        $image_path = '';
+        if (isset($_FILES['image']) && $_FILES['image']['error'] === UPLOAD_ERR_OK) {
+            $uploaded = $campaign->uploadImage($_FILES['image']);
+            if ($uploaded === false) {
+                jsonResponse(false, 'Gagal upload gambar. Pastikan format file JPG/JPEG/PNG/WEBP dan ukuran maksimal 5MB.');
+            }
+            $image_path = $uploaded;
+        }
+
+        $data = $_POST;
+        if ($image_path) {
+            $data['image'] = $image_path;
+        } else {
+            // Gunakan gambar default jika tidak ada upload
+            $data['image'] = 'assets/images/campaign-default.png';
+        }
+
+        $campaign_id = $campaign->create($data);
+
+        if ($campaign_id) {
+            // Simpan benefits jika ada
+            if (isset($_POST['benefits']) && is_array($_POST['benefits'])) {
+                foreach ($_POST['benefits'] as $benefit) {
+                    if (!empty($benefit)) {
+                        $campaign->addBenefit($campaign_id, $benefit);
+                    }
+                }
+            }
+            jsonResponse(true, 'Campaign berhasil dibuat', ['campaign_id' => $campaign_id, 'redirect' => 'campaign.php']);
+        }
+        else {
+            jsonResponse(false, 'Gagal membuat campaign');
+        }
+    }
+    catch (Exception $e) {
+        jsonResponse(false, 'Gagal menyimpan campaign: ' . $e->getMessage());
+    }
+}
+
+function updateCampaign($campaign)
+{
+    try {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            jsonResponse(false, 'Method tidak diizinkan');
+        }
+
+        $id = isset($_POST['id']) ? (int)$_POST['id'] : 0;
+        if ($id <= 0) {
+            jsonResponse(false, 'ID campaign tidak valid');
+        }
+
+        $errors = validateCampaign($_POST);
+        if (!empty($errors)) {
+            jsonResponse(false, 'Validasi gagal', ['errors' => $errors]);
+        }
+
+        // Handle upload gambar
+        $image_path = null;
+        if (isset($_FILES['image']) && $_FILES['image']['error'] === UPLOAD_ERR_OK) {
+            $image_path = $campaign->uploadImage($_FILES['image']);
+            if (!$image_path) {
+                jsonResponse(false, 'Gagal upload gambar');
+            }
+        }
+
+        // Only pass valid DB columns to update
+        $allowed_fields = ['title', 'description', 'long_description', 'location', 'tree_type',
+            'price_per_tree', 'target_trees', 'deadline', 'partner', 'status', 'map_url', 'category'];
+        $data = [];
+        foreach ($allowed_fields as $field) {
+            if (isset($_POST[$field])) {
+                $data[$field] = $_POST[$field];
+            }
+        }
+
+        if (empty($data)) {
+            jsonResponse(false, 'Tidak ada data yang diubah');
+        }
+
+        if ($image_path) {
+            $data['image'] = $image_path;
+        }
+
+        $result = $campaign->update($id, $data);
+
+        if ($result === false) {
+            // Get database error
+            $db_error = getDB()->error ?: 'Database error';
+            jsonResponse(false, 'Gagal memperbarui campaign: ' . $db_error);
+        }
+
+        // Update benefits jika ada
+        if (isset($_POST['benefits']) && is_array($_POST['benefits'])) {
+            $conn = getDB();
+            $conn->query("DELETE FROM campaign_benefits WHERE campaign_id = {$id}");
+            foreach ($_POST['benefits'] as $benefit) {
+                if (!empty($benefit)) {
+                    $campaign->addBenefit($id, $benefit);
+                }
+            }
+        }
+        
+        jsonResponse(true, 'Campaign berhasil diperbarui', ['redirect' => 'campaign.php']);
+    } catch (Exception $e) {
+        jsonResponse(false, 'Error: ' . $e->getMessage());
+    }
+}
+   
+
+function deleteCampaign($campaign)
+{
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        jsonResponse(false, 'Method tidak diizinkan');
+    }
+
+    $id = isset($_POST['id']) ? (int)$_POST['id'] : 0;
+    if ($id <= 0) {
+        jsonResponse(false, 'ID campaign tidak valid');
+    }
+
+    try {
+        $result = $campaign->delete($id);
+
+        if ($result) {
+            jsonResponse(true, 'Campaign berhasil dihapus');
+        } else {
+            jsonResponse(false, 'Gagal menghapus campaign. Silakan coba lagi.');
+        }
+    } catch (Exception $e) {
+        error_log("deleteCampaign Error: " . $e->getMessage());
+        jsonResponse(false, 'Gagal menghapus campaign: ' . $e->getMessage());
+    }
+}
+
+function validateCampaign($data)
+{
+    $errors = [];
+    if (empty($data['title']))
+        $errors['title'] = 'Nama campaign harus diisi';
+    if (empty($data['location']))
+        $errors['location'] = 'Lokasi harus diisi';
+    if (empty($data['tree_type']))
+        $errors['tree_type'] = 'Jenis pohon harus diisi';
+    if (empty($data['price_per_tree']) || $data['price_per_tree'] <= 0)
+        $errors['price_per_tree'] = 'Harga per pohon harus valid';
+    if (empty($data['target_trees']) || $data['target_trees'] <= 0)
+        $errors['target_trees'] = 'Target pohon harus valid';
+    if (empty($data['deadline']))
+        $errors['deadline'] = 'Deadline harus diisi';
+    if (empty($data['description']))
+        $errors['description'] = 'Deskripsi harus diisi';
+    return $errors;
+}
+
+// ============================================================
+// DONATION FUNCTIONS
+// ============================================================
+function confirmDonation($donation)
+{
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        jsonResponse(false, 'Method tidak diizinkan');
+    }
+
+    $id = isset($_POST['id']) ? (int)$_POST['id'] : 0;
+    if ($id <= 0) {
+        jsonResponse(false, 'ID donasi tidak valid');
+    }
+
+    $result = $donation->confirmDonation($id);
+
+    if ($result) {
+        jsonResponse(true, 'Donasi berhasil dikonfirmasi');
+    }
+    else {
+        jsonResponse(false, 'Gagal mengkonfirmasi donasi');
+    }
+}
+
+function cancelDonation($donation)
+{
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        jsonResponse(false, 'Method tidak diizinkan');
+    }
+
+    $id = isset($_POST['id']) ? (int)$_POST['id'] : 0;
+    if ($id <= 0) {
+        jsonResponse(false, 'ID donasi tidak valid');
+    }
+
+    $result = $donation->cancelDonation($id);
+
+    if ($result) {
+        jsonResponse(true, 'Donasi berhasil dibatalkan');
+    }
+    else {
+        jsonResponse(false, 'Gagal membatalkan donasi');
+    }
+}
+
+function exportDonations($donation)
+{
+    $status = isset($_GET['status']) ? $_GET['status'] : null;
+    $campaign_id = isset($_GET['campaign']) ? $_GET['campaign'] : null;
+
+    $donations = $donation->getAll($status, $campaign_id);
+
+    header('Content-Type: text/csv; charset=utf-8');
+    header('Content-Disposition: attachment; filename="donasi_sodakoh_pohon_' . date('Ymd') . '.csv"');
+
+    $output = fopen('php://output', 'w');
+    // BOM for Excel UTF-8
+    fprintf($output, chr(0xEF) . chr(0xBB) . chr(0xBF));
+
+    fputcsv($output, [
+        'No. Donasi', 'Tanggal', 'Donatur', 'Email', 'Campaign',
+        'Jumlah Pohon', 'Nominal', 'Status', 'Metode Pembayaran'
+    ]);
+
+    foreach ($donations as $d) {
+        fputcsv($output, [
+            $d['donation_number'],
+            date('d/m/Y H:i', strtotime($d['created_at'])),
+            $d['donor_name'],
+            $d['donor_email'],
+            $d['campaign_title'] ?? '-',
+            $d['trees_count'],
+            $d['amount'],
+            $d['status'],
+            $d['payment_method']
+        ]);
+    }
+    fclose($output);
+    exit;
+}
+
+// ============================================================
+// PLANTING FUNCTIONS
+// ============================================================
+function storePlanting($campaign)
+{
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        jsonResponse(false, 'Method tidak diizinkan');
+    }
+
+    $conn = getDB();
+
+    // Validasi field wajib
+    $campaign_id = (int)($_POST['campaign_id'] ?? 0);
+    if ($campaign_id <= 0) {
+        jsonResponse(false, 'Campaign harus dipilih');
+    }
+    $trees_planted = (int)($_POST['trees_planted'] ?? 0);
+    if ($trees_planted <= 0) {
+        jsonResponse(false, 'Jumlah pohon harus diisi');
+    }
+    if (empty($_POST['planting_date'])) {
+        jsonResponse(false, 'Tanggal penanaman harus diisi');
+    }
+    if (empty($_POST['location'])) {
+        jsonResponse(false, 'Lokasi penanaman harus diisi');
+    }
+
+    $planting_date = $conn->real_escape_string($_POST['planting_date']);
+    $location      = $conn->real_escape_string($_POST['location']);
+    $volunteers    = (int)($_POST['volunteers'] ?? 0);
+    $coordinator   = $conn->real_escape_string($_POST['coordinator'] ?? '');
+    $description   = $conn->real_escape_string($_POST['description'] ?? '');
+
+    // Handle upload thumbnail
+    $image_path = '';
+    if (isset($_FILES['image']) && $_FILES['image']['error'] === UPLOAD_ERR_OK) {
+        $uploaded = uploadPlantingImage($_FILES['image']);
+        if ($uploaded === false) {
+            jsonResponse(false, 'Gagal upload foto. Pastikan format JPG/JPEG/PNG/WEBP dan ukuran maksimal 5MB.');
+        }
+        $image_path = $uploaded;
+    }
+
+    $image_esc = $conn->real_escape_string($image_path);
+    $now = date('Y-m-d H:i:s');
+    $sql = "INSERT INTO plantings (campaign_id, trees_planted, planting_date, location, volunteers, coordinator, description, image, status, created_at) 
+            VALUES ({$campaign_id}, {$trees_planted}, '{$planting_date}', '{$location}', {$volunteers}, '{$coordinator}', '{$description}', '{$image_esc}', 'completed', '{$now}')";
+
+    if ($conn->query($sql)) {
+        $new_planting_id = $conn->insert_id;
+
+        // Update planted_trees di campaign
+        $campaign->updatePlantedTrees($campaign_id, $trees_planted);
+
+        // Handle upload foto galeri tambahan (multiple)
+        if (isset($_FILES['gallery_images']) && !empty($_FILES['gallery_images']['name'][0])) {
+            uploadPlantingGalleryImages($_FILES['gallery_images'], $new_planting_id);
+        }
+
+        jsonResponse(true, 'Data penanaman berhasil disimpan', ['redirect' => 'planted.php']);
+    } else {
+        jsonResponse(false, 'Gagal menyimpan data penanaman: ' . $conn->error);
+    }
+}
+
+function updatePlanting($campaign)
+{
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        jsonResponse(false, 'Method tidak diizinkan');
+    }
+
+    $conn = getDB();
+
+    $id = (int)($_POST['id'] ?? 0);
+    if ($id <= 0) {
+        jsonResponse(false, 'ID penanaman tidak valid');
+    }
+
+    $campaign_id   = (int)($_POST['campaign_id'] ?? 0);
+    $trees_planted = (int)($_POST['trees_planted'] ?? 0);
+    $planting_date = $conn->real_escape_string($_POST['planting_date'] ?? '');
+    $location      = $conn->real_escape_string($_POST['location'] ?? '');
+    $volunteers    = (int)($_POST['volunteers'] ?? 0);
+    $coordinator   = $conn->real_escape_string($_POST['coordinator'] ?? '');
+    $description   = $conn->real_escape_string($_POST['description'] ?? '');
+    $now           = date('Y-m-d H:i:s');
+
+    // Handle upload thumbnail baru jika ada
+    $image_sql = '';
+    if (isset($_FILES['image']) && $_FILES['image']['error'] === UPLOAD_ERR_OK) {
+        $uploaded = uploadPlantingImage($_FILES['image']);
+        if ($uploaded === false) {
+            jsonResponse(false, 'Gagal upload foto. Pastikan format JPG/JPEG/PNG/WEBP dan ukuran maksimal 5MB.');
+        }
+        $image_path_esc = $conn->real_escape_string($uploaded);
+        $image_sql = ", image = '{$image_path_esc}'";
+    }
+
+    $sql = "UPDATE plantings 
+            SET campaign_id = {$campaign_id}, trees_planted = {$trees_planted}, 
+                planting_date = '{$planting_date}', location = '{$location}', 
+                volunteers = {$volunteers}, coordinator = '{$coordinator}', 
+                description = '{$description}'{$image_sql}, updated_at = '{$now}' 
+            WHERE id = {$id}";
+
+    if ($conn->query($sql)) {
+        // Handle hapus foto galeri yang dipilih
+        if (isset($_POST['delete_gallery_ids']) && is_array($_POST['delete_gallery_ids'])) {
+            foreach ($_POST['delete_gallery_ids'] as $gid) {
+                deletePlantingGalleryItem((int)$gid);
+            }
+        }
+
+        // Handle upload foto galeri tambahan baru
+        if (isset($_FILES['gallery_images']) && !empty($_FILES['gallery_images']['name'][0])) {
+            uploadPlantingGalleryImages($_FILES['gallery_images'], $id);
+        }
+
+        jsonResponse(true, 'Data penanaman berhasil diupdate');
+    } else {
+        jsonResponse(false, 'Gagal mengupdate data penanaman: ' . $conn->error);
+    }
+}
+
+function deletePlanting()
+{
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        jsonResponse(false, 'Method tidak diizinkan');
+    }
+
+    $id = isset($_POST['id']) ? (int)$_POST['id'] : 0;
+    if ($id <= 0) {
+        jsonResponse(false, 'ID penanaman tidak valid');
+    }
+
+    $conn = getDB();
+
+    // Hapus dulu foto-foto galeri dari file system
+    $gallery_rows = $conn->query("SELECT image_url FROM planting_gallery WHERE planting_id = {$id}");
+    if ($gallery_rows) {
+        while ($g = $gallery_rows->fetch_assoc()) {
+            $file_path = dirname(__DIR__) . '/' . $g['image_url'];
+            if (file_exists($file_path)) {
+                @unlink($file_path);
+            }
+        }
+    }
+    // planting_gallery akan ikut terhapus karena ON DELETE CASCADE
+
+    $sql = "DELETE FROM plantings WHERE id = {$id}";
+    if ($conn->query($sql)) {
+        jsonResponse(true, 'Data penanaman berhasil dihapus');
+    } else {
+        jsonResponse(false, 'Gagal menghapus data penanaman');
+    }
+}
+
+// ============================================================
+// API / STATS FUNCTIONS
+// ============================================================
+function updateSubmissionStatus($submission, $campaign)
+{
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        jsonResponse(false, 'Method tidak diizinkan');
+    }
+
+    $id = isset($_POST['id']) ? (int)$_POST['id'] : 0;
+    $status = isset($_POST['status']) ? $_POST['status'] : '';
+
+    if ($id <= 0 || !in_array($status, ['pending', 'approved', 'rejected'])) {
+        jsonResponse(false, 'Data tidak valid');
+    }
+
+    $result = $submission->updateStatus($id, $status);
+
+    if ($result) {
+        if ($status == 'approved') {
+            // Check if it's stage 2
+            $subData = $submission->getById($id);
+            if ($subData && isset($subData['stage']) && $subData['stage'] == 2) {
+                // Auto-create campaign
+                // We use images if available. We'll pick the first image or null
+                $imagePath = null;
+                if ($subData['image']) {
+                    $imgs = json_decode($subData['image'], true);
+                    if (is_array($imgs) && count($imgs) > 0) {
+                        $imagePath = $imgs[0];
+                    } else {
+                        $imagePath = $subData['image']; // legacy format
+                    }
+                }
+                
+                $campaignData = [
+                    'title' => $subData['title'],
+                    'description' => $subData['description'],
+                    'long_description' => $subData['long_description'],
+                    'location' => $subData['location'],
+                    'tree_type' => $subData['tree_type'],
+                    'price_per_tree' => $subData['price_per_tree'],
+                    'target_trees' => $subData['target_trees'],
+                    'deadline' => $subData['deadline'],
+                    'partner' => $subData['partner'] ?? $subData['organization_name'] ?? $subData['submitter_name'],
+                    'map_url' => $subData['map_url'],
+                    'category' => $subData['category'],
+                    'status' => 'active', // Make it active immediately upon stage 2 approval
+                    'image' => $imagePath
+                ];
+                
+                try {
+                    $newCampaignId = $campaign->create($campaignData);
+                    if ($newCampaignId && !empty($subData['benefits_json'])) {
+                        $benefits = json_decode($subData['benefits_json'], true);
+                        if (is_array($benefits)) {
+                            foreach ($benefits as $benefit) {
+                                if (!empty($benefit)) {
+                                    $campaign->addBenefit($newCampaignId, $benefit);
+                                }
+                            }
+                        }
+                    }
+                } catch (Exception $e) {
+                    error_log("Failed to auto-create campaign from stage 2: " . $e->getMessage());
+                }
+            }
+        }
+        jsonResponse(true, 'Status pengajuan berhasil diperbarui');
+    } else {
+        jsonResponse(false, 'Gagal memperbarui status pengajuan');
+    }
+}
+
+function deleteSubmission($submission)
+{
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        jsonResponse(false, 'Method tidak diizinkan');
+    }
+
+    $id = isset($_POST['id']) ? (int)$_POST['id'] : 0;
+    if ($id <= 0) {
+        jsonResponse(false, 'ID pengajuan tidak valid');
+    }
+
+    $result = $submission->delete($id);
+
+    if ($result) {
+        jsonResponse(true, 'Pengajuan berhasil dihapus');
+    } else {
+        jsonResponse(false, 'Gagal menghapus pengajuan');
+    }
+}
+
+function getStats($campaign, $donation)
+{
+    $campaign_stats = $campaign->getStats();
+    $donation_stats = $donation->getStats();
+
+    jsonResponse(true, 'OK', ['data' => array_merge($campaign_stats, $donation_stats)]);
+}
+
+function getChartData($donation)
+{
+    $year = isset($_GET['year']) ? $_GET['year'] : date('Y');
+    $monthly_donations = $donation->getMonthlyDonations($year);
+
+    jsonResponse(true, 'OK', ['data' => ['monthly_donations' => $monthly_donations]]);
+}
+?>
