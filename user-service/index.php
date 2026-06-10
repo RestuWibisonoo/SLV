@@ -1,92 +1,159 @@
 <?php
-// index.php
-header('Content-Type: application/json');
+header('Content-Type: application/json; charset=utf-8');
 
-require_once 'config/koneksi.php';
+require_once __DIR__ . '/config/koneksi.php';
+
+function jsonResponse($data, int $statusCode = 200)
+{
+    http_response_code($statusCode);
+    echo json_encode($data);
+    exit;
+}
 
 $method = $_SERVER['REQUEST_METHOD'];
-$requestUri = explode('?', $_SERVER['REQUEST_URI'], 2)[0];
-$path = rtrim($requestUri, '/');
-$pathParts = explode('/', $path);
-$action = end($pathParts); // Get the last part, e.g., 'login', 'register'
+$requestUri = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
+$path = trim($requestUri, '/');
+$parts = $path === '' ? [] : explode('/', $path);
+$action = end($parts) ?: '';
+
+if ($method === 'OPTIONS') {
+    jsonResponse([
+        'success' => true,
+        'message' => 'OK'
+    ]);
+}
+
+// Health check / root user service
+if ($method === 'GET' && ($action === '' || $action === 'health' || $action === 'status')) {
+    jsonResponse([
+        'success' => true,
+        'message' => 'User Service Online',
+        'endpoints' => [
+            'POST /api/user/login',
+            'POST /api/user/register'
+        ]
+    ]);
+}
 
 if ($method === 'POST') {
-    $input = json_decode(file_get_contents('php://input'), true) ?? $_POST;
-    
+    $rawInput = file_get_contents('php://input');
+    $input = json_decode($rawInput, true);
+
+    if (!is_array($input)) {
+        $input = $_POST;
+    }
+
     if ($action === 'login') {
-        $email = $input['email'] ?? '';
+        $email = trim($input['email'] ?? '');
         $password = $input['password'] ?? '';
-        
-        if (empty($email) || empty($password)) {
-            echo json_encode(['success' => false, 'message' => 'Email dan password harus diisi']);
-            exit;
+
+        if ($email === '' || $password === '') {
+            jsonResponse([
+                'success' => false,
+                'message' => 'Email dan password harus diisi'
+            ], 400);
         }
-        
+
         $conn = getDB();
-        $email_esc = $conn->real_escape_string($email);
-        $result = $conn->query("SELECT * FROM users WHERE email = '{$email_esc}' LIMIT 1");
-        
-        if ($result && $result->num_rows > 0) {
-            $user = $result->fetch_assoc();
-            if (password_verify($password, $user['password'])) {
-                // Update last login
-                $conn->query("UPDATE users SET last_login = NOW() WHERE id = {$user['id']}");
-                
-                // Exclude password from response
-                unset($user['password']);
-                
-                echo json_encode([
-                    'success' => true,
-                    'message' => 'Login berhasil',
-                    'data' => $user,
-                    'token' => base64_encode(json_encode(['id' => $user['id'], 'role' => $user['role']])) // Dummy token for API
-                ]);
-            } else {
-                echo json_encode(['success' => false, 'message' => 'Password salah']);
-            }
-        } else {
-            echo json_encode(['success' => false, 'message' => 'Email tidak ditemukan']);
+
+        $stmt = $conn->prepare("SELECT * FROM users WHERE email = ? LIMIT 1");
+        $stmt->bind_param("s", $email);
+        $stmt->execute();
+
+        $result = $stmt->get_result();
+
+        if (!$result || $result->num_rows === 0) {
+            jsonResponse([
+                'success' => false,
+                'message' => 'Email tidak ditemukan'
+            ], 404);
         }
-        exit;
-    } 
-    
+
+        $user = $result->fetch_assoc();
+
+        if (!password_verify($password, $user['password'])) {
+            jsonResponse([
+                'success' => false,
+                'message' => 'Password salah'
+            ], 401);
+        }
+
+        $update = $conn->prepare("UPDATE users SET last_login = NOW() WHERE id = ?");
+        $update->bind_param("i", $user['id']);
+        $update->execute();
+
+        unset($user['password']);
+
+        jsonResponse([
+            'success' => true,
+            'message' => 'Login berhasil',
+            'data' => $user,
+            'token' => base64_encode(json_encode([
+                'id' => $user['id'],
+                'role' => $user['role'] ?? 'user'
+            ]))
+        ]);
+    }
+
     if ($action === 'register') {
-        $name = $input['name'] ?? '';
-        $email = $input['email'] ?? '';
+        $name = trim($input['name'] ?? '');
+        $email = trim($input['email'] ?? '');
         $password = $input['password'] ?? '';
-        $phone = $input['phone'] ?? '';
-        
-        if (empty($name) || empty($email) || empty($password)) {
-            echo json_encode(['success' => false, 'message' => 'Semua field wajib diisi']);
-            exit;
+        $phone = trim($input['phone'] ?? '');
+
+        if ($name === '' || $email === '' || $password === '') {
+            jsonResponse([
+                'success' => false,
+                'message' => 'Nama, email, dan password wajib diisi'
+            ], 400);
         }
-        
+
         $conn = getDB();
-        $email_esc = $conn->real_escape_string($email);
-        
-        // Cek email
-        $check = $conn->query("SELECT id FROM users WHERE email = '{$email_esc}'");
-        if ($check && $check->num_rows > 0) {
-            echo json_encode(['success' => false, 'message' => 'Email sudah terdaftar']);
-            exit;
+
+        $check = $conn->prepare("SELECT id FROM users WHERE email = ? LIMIT 1");
+        $check->bind_param("s", $email);
+        $check->execute();
+
+        $checkResult = $check->get_result();
+
+        if ($checkResult && $checkResult->num_rows > 0) {
+            jsonResponse([
+                'success' => false,
+                'message' => 'Email sudah terdaftar'
+            ], 409);
         }
-        
-        $name_esc = $conn->real_escape_string($name);
-        $phone_esc = $conn->real_escape_string($phone);
+
         $hash = password_hash($password, PASSWORD_DEFAULT);
-        
-        $sql = "INSERT INTO users (name, email, password, phone, role, created_at) VALUES ('{$name_esc}', '{$email_esc}', '{$hash}', '{$phone_esc}', 'user', NOW())";
-        
-        if ($conn->query($sql)) {
-            echo json_encode(['success' => true, 'message' => 'Registrasi berhasil']);
-        } else {
-            echo json_encode(['success' => false, 'message' => 'Registrasi gagal: ' . $conn->error]);
+        $role = 'user';
+
+        $stmt = $conn->prepare("
+            INSERT INTO users (name, email, password, phone, role, created_at)
+            VALUES (?, ?, ?, ?, ?, NOW())
+        ");
+
+        $stmt->bind_param("sssss", $name, $email, $hash, $phone, $role);
+
+        if ($stmt->execute()) {
+            jsonResponse([
+                'success' => true,
+                'message' => 'Registrasi berhasil'
+            ], 201);
         }
-        exit;
+
+        jsonResponse([
+            'success' => false,
+            'message' => 'Registrasi gagal: ' . $conn->error
+        ], 500);
     }
 }
 
-// Fallback if not found
-http_response_code(404);
-echo json_encode(['success' => false, 'message' => 'Endpoint tidak ditemukan']);
-?>
+jsonResponse([
+    'success' => false,
+    'message' => 'Endpoint tidak ditemukan',
+    'available_endpoints' => [
+        'GET /api/user/',
+        'GET /api/user/health',
+        'POST /api/user/login',
+        'POST /api/user/register'
+    ]
+], 404);
